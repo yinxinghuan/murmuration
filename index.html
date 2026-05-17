@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="icon" type="image/gif" href="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" />
+<title>Murmuration</title>
+<style>
+  :root { --bg: #0a0b14; --accent: #ffd9a8; }
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: var(--bg);
+    color: #fff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+    overflow: hidden; touch-action: none;
+    overscroll-behavior: none;
+  }
+  body { overflow: hidden; position: relative; transition: background 0.6s ease; }
+  canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+  #bg     { z-index: 1; background: var(--bg); }
+  #flock  { z-index: 2; }
+
+  /* HUD bottom */
+  .hud-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    z-index: 20; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0 16px 22px;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  .hud-bottom .title {
+    font-size: 11px; letter-spacing: 0.42em; text-transform: uppercase;
+    color: rgba(255,255,255,0.65);
+    text-shadow: 0 1px 8px rgba(0,0,0,0.55);
+    transition: color 0.5s ease;
+  }
+  .hud-bottom .count {
+    margin-top: 6px;
+    font-size: 36px; font-weight: 700; line-height: 1;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    text-shadow: 0 2px 14px rgba(0,0,0,0.45), 0 0 24px rgba(255,255,255,0.18);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .hud-bottom .count.pop { transform: scale(1.1); }
+  .hud-bottom .lb-btn {
+    margin-top: 12px;
+    width: 34px; height: 34px;
+    background: rgba(0,0,0,0.32);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 50%; color: #fff;
+    font-size: 16px; line-height: 1; padding: 0;
+    cursor: pointer; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s ease;
+  }
+  .hud-bottom .lb-btn:active { transform: scale(0.9); }
+
+  /* Top theme strip — numbered minimal chips */
+  .theme-strip {
+    position: absolute; left: 0; right: 0;
+    top: calc(14px + env(safe-area-inset-top));
+    z-index: 30; pointer-events: none;
+    display: flex; justify-content: center;
+  }
+  .theme-strip__inner {
+    pointer-events: auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 6px;
+    max-width: calc(100% - 24px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .theme-strip__inner::-webkit-scrollbar { display: none; }
+  .theme-chip {
+    flex: 0 0 auto;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+    display: flex; align-items: center; justify-content: center;
+    font: 600 10.5px/1 -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+          'Helvetica Neue', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: rgba(255, 255, 255, 0.96);
+    text-shadow: 0 0 2px rgba(0,0,0,0.75), 0 1px 1px rgba(0,0,0,0.55);
+    opacity: 0.80;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.22s ease,
+                background 0.22s ease,
+                border-color 0.22s ease,
+                box-shadow 0.22s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .theme-chip.active {
+    opacity: 1;
+    transform: scale(1.15);
+    background: rgba(18, 20, 28, 0.94);
+    border-color: rgba(255, 255, 255, 1);
+    color: #ffffff;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.35);
+    box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
+  }
+
+  /* AlterU watermark */
+  .watermark {
+    position: absolute; left: 14px; bottom: 14px;
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 25;
+    width: 56px; height: auto; opacity: 0.38;
+    pointer-events: none;
+  }
+  .watermark img { width: 100%; display: block; }
+
+  /* Centered intro hint */
+  .wipe-hint {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+    z-index: 28; pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  .wipe-hint.gone { opacity: 0; }
+  .ghost-finger {
+    position: absolute;
+    width: 56px; height: 56px;
+    transform-origin: 50% 30%;
+    will-change: transform, opacity;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  .ghost-finger.show { opacity: 1; }
+  .ghost-finger svg {
+    width: 100%; height: 100%;
+    fill: rgba(30, 32, 44, 0.92);
+    filter:
+      drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
+      drop-shadow(0 0 1px rgba(255, 255, 255, 0.95))
+      drop-shadow(0 2px 3px rgba(0, 0, 0, 0.30));
+  }
+  .wipe-hint__label {
+    position: absolute;
+    left: 50%; bottom: 36%;
+    transform: translateX(-50%);
+    font-size: 11px; letter-spacing: 0.36em; text-transform: uppercase;
+    color: rgba(30, 30, 42, 0.90);
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.95),
+      0 0 10px rgba(255, 255, 255, 0.65),
+      0 1px 2px rgba(0, 0, 0, 0.20);
+    animation: mm-hint-pulse 2.4s ease-in-out infinite;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    white-space: nowrap;
+  }
+  .wipe-hint__label.show { opacity: 1; }
+  @keyframes mm-hint-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+  }
+
+  /* === Leaderboard styles === */
+  .gg-lb-backdrop {
+    position: absolute; inset: 0; z-index: 200;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.72);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  .gg-lb-backdrop.show { display: flex; }
+  .gg-lb-panel {
+    width: min(92%, 400px); max-height: 80vh;
+    display: flex; flex-direction: column; gap: 12px;
+    background: rgba(14, 16, 26, 0.97);
+    border: 1px solid rgba(255, 217, 168, 0.16);
+    border-radius: 20px; padding: 18px 14px 14px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+    color: #fff; font-family: inherit;
+  }
+  .gg-lb-head { display: flex; align-items: center; gap: 10px; }
+  .gg-lb-head__icon { font-size: 24px; }
+  .gg-lb-head__title { font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(255,255,255,0.55); }
+  .gg-lb-head__game { font-size: 14px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; margin-top: 2px; }
+  .gg-lb-close {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(255,255,255,0.08); border: none; color: #fff;
+    font-size: 13px; cursor: pointer; font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .gg-lb-tabs { display: flex; gap: 6px; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 4px; }
+  .gg-lb-tab {
+    flex: 1; padding: 8px 10px; border-radius: 8px; border: none;
+    background: transparent; color: rgba(255,255,255,0.6);
+    font-family: inherit; font-size: 12px; letter-spacing: 0.04em; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .gg-lb-tab.active { background: rgba(255, 217, 168, 0.18); color: #fff; }
+  .gg-lb-body { flex: 1; overflow-y: auto; min-height: 200px; -webkit-overflow-scrolling: touch; }
+  .gg-lb-state { padding: 48px 12px; text-align: center; color: rgba(255,255,255,0.45); font-size: 13px; }
+  .gg-lb-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 12px; margin-bottom: 4px; border: 1px solid transparent; }
+  .gg-lb-row.top { background: rgba(255,255,255,0.04); }
+  .gg-lb-row.me  { background: rgba(255, 217, 168, 0.16); border-color: rgba(255, 217, 168, 0.4); }
+  .gg-lb-row.clickable { cursor: pointer; }
+  .gg-lb-rank { width: 26px; text-align: center; font-weight: 700; font-size: 14px; color: rgba(255,255,255,0.45); }
+  .gg-lb-rank.medal { font-size: 20px; }
+  .gg-lb-av { background: rgba(255,255,255,0.08); border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; font-weight: 700; color: rgba(255,255,255,0.6); flex-shrink: 0; }
+  .gg-lb-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gg-lb-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .gg-lb-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+  .gg-lb-mebadge { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(255, 217, 168, 0.28); color: var(--accent); }
+  .gg-lb-score { font-weight: 700; font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <canvas id="flock"></canvas>
+
+  <div class="theme-strip" id="themeStrip">
+    <div class="theme-strip__inner">
+      <div class="theme-chip active" data-t="starlings" aria-label="Starlings">1</div>
+      <div class="theme-chip" data-t="fireflies" aria-label="Fireflies">2</div>
+      <div class="theme-chip" data-t="dandelion" aria-label="Dandelion">3</div>
+    </div>
+  </div>
+
+  <div class="hud-bottom">
+    <div class="title">Murmuration</div>
+    <div class="count" id="count" style="display:none">0</div>
+    <button type="button" class="lb-btn" id="lbToggleBtn" aria-label="Leaderboard">🏆</button>
+  </div>
+
+  <div class="watermark"><img src="img/aigram.svg" alt="" draggable="false" /></div>
+
+  <!-- Poster overlay: visible with ?poster=1 -->
+  <div id="posterOverlay" style="display:none; position:absolute; left:0; right:0; top:0;
+       z-index:50; pointer-events:none; text-align:center; padding-top:80px;">
+    <div style="font-size:14px; letter-spacing:0.45em; color:rgba(255,255,255,0.7);
+         text-transform:uppercase; text-shadow:0 2px 12px rgba(0,0,0,0.6);">A L T E R U</div>
+    <div style="margin-top:18px; font-size:84px; font-weight:800; letter-spacing:0.02em;
+         color:#fff; text-shadow:0 4px 24px rgba(0,0,0,0.65), 0 0 28px rgba(255,255,255,0.18);
+         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">MURMURATION</div>
+    <div style="margin-top:22px; font-size:18px; letter-spacing:0.3em;
+         color:rgba(255,255,255,0.75); text-transform:uppercase;
+         text-shadow:0 2px 10px rgba(0,0,0,0.6);">drag to gather the flock</div>
+  </div>
+
+  <!-- First-time hint: ghost finger demonstrates a circular gather -->
+  <div class="wipe-hint" id="wipeHint">
+    <div class="wipe-hint__label" id="wipeHintLabel">Drag to gather</div>
+    <div class="ghost-finger" id="ghostFinger">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.92-1.38z"/>
+      </svg>
+    </div>
+  </div>
+
+<script>
+/* ========================================================================
+   Leaderboard module — lifetime gather count
+   ======================================================================== */
+(function () {
+  'use strict';
+  const GAMES_API = 'https://games-api.xinghuan-yin.workers.dev';
+  const GAME_ID   = 'murmuration';
+  const GAME_NAME = 'MURMURATION';
+
+  const params     = new URLSearchParams(window.location.search);
+  const telegramId = params.get('telegram_id') || null;
+  const rawOrigin  = params.get('api_origin');
+  const apiOrigin  = rawOrigin ? decodeURIComponent(rawOrigin) : null;
+  const isInAigram = !!(telegramId && apiOrigin);
+
+  let currentUser = null;
+  const toBase64   = s => btoa(unescape(encodeURIComponent(s)));
+  const fromBase64 = s => decodeURIComponent(escape(atob(s)));
+
+  function callAigramAPI(url) {
+    return new Promise((resolve, reject) => {
+      const id = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + '-' + Math.random());
+      const target = new URL(apiOrigin).origin;
+      let timer;
+      const handler = (e) => {
+        if (e.origin !== target) return;
+        const msg = typeof e.data === 'string' ? e.data : '';
+        if (!msg.startsWith('callAPIResult-')) return;
+        try {
+          const r = JSON.parse(fromBase64(msg.slice('callAPIResult-'.length)));
+          if (r.request_id !== id) return;
+          window.removeEventListener('message', handler);
+          clearTimeout(timer);
+          if (r.success) resolve(r.data); else reject(new Error(r.error || 'API error'));
+        } catch (_) {}
+      };
+      window.addEventListener('message', handler);
+      window.parent.postMessage(
+        `callAPI-${toBase64(JSON.stringify({ url, method: 'GET', data: null, request_id: id, emitter: window.location.origin }))}`,
+        target
+      );
+      timer = setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('timeout')); }, 10000);
+    });
+  }
+
+  if (isInAigram) {
+    callAigramAPI(`/note/telegram/user/get/info/by/telegram_id?telegram_id=${telegramId}`)
+      .then(res => { currentUser = (res && res.data) ? res.data : res; })
+      .catch(() => {});
+  }
+
+  async function submitScore(score) {
+    if (!telegramId || !(score > 0)) return;
+    try {
+      await fetch(`${GAMES_API}/score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          game_id: GAME_ID, telegram_id: telegramId,
+          name: (currentUser && currentUser.name) || telegramId,
+          avatar_url: (currentUser && currentUser.head_url) || '',
+          score: Math.floor(score),
+        }),
+      });
+    } catch (_) {}
+  }
+  async function fetchGlobal() {
+    try {
+      const res = await fetch(`${GAMES_API}/leaderboard?game_id=${GAME_ID}&limit=50`);
+      const json = await res.json();
+      return (json.leaderboard || []).map(e => Object.assign({}, e, { isMe: String(e.telegram_id) === String(telegramId) }));
+    } catch (_) { return []; }
+  }
+  async function fetchFriends() {
+    if (!isInAigram) return [];
+    const ids = new Set([String(telegramId)]);
+    try {
+      const contacts = await callAigramAPI(`/note/telegram/user/contact/list?telegram_id=${telegramId}`);
+      const list = Array.isArray(contacts) ? contacts : (contacts && contacts.data) || [];
+      list.forEach(f => { if (f && f.telegram_id) ids.add(String(f.telegram_id)); });
+    } catch (_) {}
+    try {
+      const res = await fetch(`${GAMES_API}/leaderboard?game_id=${GAME_ID}&telegram_ids=${encodeURIComponent([...ids].join(','))}`);
+      const json = await res.json();
+      return (json.leaderboard || []).map(e => Object.assign({}, e, { isMe: String(e.telegram_id) === String(telegramId) }));
+    } catch (_) { return []; }
+  }
+  function openProfile(tid) {
+    if (!apiOrigin) return;
+    try {
+      const enc = btoa(JSON.stringify({ id: tid }));
+      window.parent.postMessage(`AW.PROFILE.OPEN-${enc}`, new URL(apiOrigin).origin);
+    } catch (_) {}
+  }
+
+  const zh = (navigator.language || '').toLowerCase().startsWith('zh');
+  const S = zh
+    ? { title:'排行榜', global:'🌍 全局榜', friends:'👥 好友榜', me:'我',
+        empty:'还没有人聚拢过鸟群。', emptyFriends:'好友还没有人玩过。', loading:'加载中…' }
+    : { title:'Leaderboard', global:'🌍 Global', friends:'👥 Friends', me:'me',
+        empty:'No one has gathered the flock yet.', emptyFriends:'No friends on the board yet.', loading:'Loading…' };
+  const MEDALS = ['🥇','🥈','🥉'];
+  const MEDAL_COLORS = ['#FFD700','#C0C0C0','#CD7F32'];
+
+  let root, body;
+  const tabs = {};
+  let currentTab = 'global';
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function build() {
+    if (root) return;
+    root = document.createElement('div');
+    root.className = 'gg-lb-backdrop';
+    root.addEventListener('pointerdown', e => { if (e.target === root) hide(); });
+    const panel = document.createElement('div'); panel.className = 'gg-lb-panel'; root.appendChild(panel);
+    const head = document.createElement('div'); head.className = 'gg-lb-head';
+    head.innerHTML = '<span class="gg-lb-head__icon">🏆</span>' +
+      '<div style="flex:1; min-width:0">' +
+        `<div class="gg-lb-head__title">${esc(S.title)}</div>` +
+        `<div class="gg-lb-head__game">${esc(GAME_NAME)}</div></div>` +
+      '<button type="button" class="gg-lb-close">✕</button>';
+    panel.appendChild(head);
+    head.querySelector('.gg-lb-close').addEventListener('pointerdown', hide);
+    if (isInAigram) {
+      const tabRow = document.createElement('div'); tabRow.className = 'gg-lb-tabs';
+      ['global','friends'].forEach(key => {
+        const b = document.createElement('button'); b.type = 'button';
+        b.className = 'gg-lb-tab' + (key === 'global' ? ' active' : '');
+        b.textContent = key === 'global' ? S.global : S.friends;
+        b.addEventListener('pointerdown', () => {
+          if (currentTab !== key) { currentTab = key; updateTabs(); refresh(); }
+        });
+        tabRow.appendChild(b); tabs[key] = b;
+      });
+      panel.appendChild(tabRow);
+    }
+    body = document.createElement('div'); body.className = 'gg-lb-body'; panel.appendChild(body);
+    document.body.appendChild(root);
+  }
+  function updateTabs() { Object.keys(tabs).forEach(k => tabs[k].classList.toggle('active', k === currentTab)); }
+  function render(entries) {
+    if (!body) return;
+    body.innerHTML = '';
+    if (!entries.length) {
+      const empty = document.createElement('div'); empty.className = 'gg-lb-state';
+      empty.textContent = currentTab === 'friends' ? S.emptyFriends : S.empty;
+      body.appendChild(empty); return;
+    }
+    entries.forEach((e, i) => {
+      const row = document.createElement('div'); const top = i < 3;
+      row.className = 'gg-lb-row' + (top ? ' top' : '') + (e.isMe ? ' me' : '') + (isInAigram ? ' clickable' : '');
+      if (isInAigram) row.addEventListener('pointerdown', () => openProfile(e.telegram_id));
+      const rank = document.createElement('div');
+      if (top) { rank.className = 'gg-lb-rank medal'; rank.textContent = MEDALS[i]; rank.style.color = MEDAL_COLORS[i]; }
+      else { rank.className = 'gg-lb-rank'; rank.textContent = String(i + 1); }
+      row.appendChild(rank);
+      const sz = top ? 40 : 34;
+      const av = document.createElement('div'); av.className = 'gg-lb-av';
+      av.style.width = sz + 'px'; av.style.height = sz + 'px'; av.style.fontSize = Math.round(sz * 0.4) + 'px';
+      if (e.avatar_url) {
+        const img = document.createElement('img'); img.src = e.avatar_url; img.alt = e.name || ''; img.draggable = false;
+        img.onerror = () => { av.innerHTML = ''; av.textContent = (e.name || '?').charAt(0).toUpperCase(); };
+        av.appendChild(img);
+      } else { av.textContent = (e.name || '?').charAt(0).toUpperCase(); }
+      row.appendChild(av);
+      const info = document.createElement('div'); info.className = 'gg-lb-info';
+      info.innerHTML = `<span class="gg-lb-name">${esc(e.name || '')}</span>` + (e.isMe ? `<span class="gg-lb-mebadge">${esc(S.me)}</span>` : '');
+      row.appendChild(info);
+      const sc = document.createElement('span'); sc.className = 'gg-lb-score';
+      sc.textContent = Number(e.score || 0).toLocaleString('en-US');
+      row.appendChild(sc);
+      body.appendChild(row);
+    });
+  }
+  async function refresh() {
+    body.innerHTML = `<div class="gg-lb-state">${esc(S.loading)}</div>`;
+    const data = currentTab === 'friends' ? await fetchFriends() : await fetchGlobal();
+    render(data);
+  }
+  function show() { build(); currentTab = 'global'; updateTabs(); root.classList.add('show'); refresh(); }
+  function hide() { if (root) root.classList.remove('show'); }
+  const tbtn = document.getElementById('lbToggleBtn');
+  if (tbtn) tbtn.addEventListener('pointerdown', show);
+  window.GG_LB = { isInAigram, submitScore, show, hide };
+})();
+</script>
+
+<script>
+/* ========================================================================
+   Murmuration — boid flock that follows your finger
+   ======================================================================== */
+(() => {
+  'use strict';
+
+  /* ---------- canvases + sizing ---------- */
+  const bg     = document.getElementById('bg');
+  const flock  = document.getElementById('flock');
+  const bgCtx    = bg.getContext('2d');
+  const flockCtx = flock.getContext('2d');
+  const countEl  = document.getElementById('count');
+  const themeStrip = document.getElementById('themeStrip');
+  const wipeHintEl = document.getElementById('wipeHint');
+
+  let W = 0, H = 0, DPR = 1, SCALE = 1;
+  let lifetime = 0;
+  let pendingScore = 0;
+  let firstTouch = false;
+  const isPoster = new URLSearchParams(window.location.search).get('poster') === '1';
+
+  /* ---------- themes ---------- */
+  const THEMES = {
+    starlings: {
+      label: 'Starlings',
+      bodyBg: '#2a1428',
+      boidColor: '#08070d',
+      boidHaloColor: 'rgba(8, 7, 13, 0.30)',
+      boidStyle: 'triangle',     // arrowhead facing velocity
+      boidSize: 5.2,
+      boidCount: 130,
+      maxSpeed: 4.0,
+      paintBg: paintDuskSky,
+      ambient: 'wind',
+      trailLen: 0,
+    },
+    fireflies: {
+      label: 'Fireflies',
+      bodyBg: '#020a07',
+      boidColor: '#fffbb0',
+      boidGlow: 'rgba(255, 235, 110, 0.65)',
+      boidStyle: 'firefly',
+      boidSize: 2.6,
+      boidCount: 95,
+      maxSpeed: 1.8,
+      paintBg: paintForestNight,
+      ambient: 'crickets',
+      trailLen: 14,
+    },
+    dandelion: {
+      label: 'Dandelion',
+      bodyBg: '#a8c4d9',
+      boidColor: '#ffffff',
+      boidGlow: 'rgba(255, 255, 255, 0.55)',
+      boidStyle: 'puff',          // soft round + fine radial filaments
+      boidSize: 6.0,
+      boidCount: 70,
+      maxSpeed: 2.4,
+      paintBg: paintSpringSky,
+      ambient: 'breeze',
+      trailLen: 8,
+    },
+  };
+  let theme = THEMES.starlings;
+  let themeName = 'starlings';
+
+  /* ============ THEME BACKGROUNDS ============ */
+  function paintDuskSky(c, w, h) {
+    // Deep magenta to dusty orange sky — classic starling murmuration backdrop
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0,    '#190420');
+    g.addColorStop(0.25, '#3a1442');
+    g.addColorStop(0.55, '#8a2e4f');
+    g.addColorStop(0.78, '#d05a4a');
+    g.addColorStop(0.92, '#f0a85a');
+    g.addColorStop(1,    '#3a1a20');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+
+    // Sun blush
+    const sx = w * 0.5, sy = h * 0.82;
+    const sun = c.createRadialGradient(sx, sy, 0, sx, sy, w * 0.55);
+    sun.addColorStop(0,   'rgba(255, 220, 160, 0.55)');
+    sun.addColorStop(0.4, 'rgba(255, 180, 110, 0.25)');
+    sun.addColorStop(1,   'rgba(255, 180, 110, 0)');
+    c.fillStyle = sun; c.fillRect(0, 0, w, h);
+
+    // Distant tree silhouette ridge
+    c.fillStyle = '#0a0510';
+    c.beginPath();
+    c.moveTo(0, h * 0.82);
+    let x = 0;
+    while (x < w) {
+      const peak = (((x * 13) % 24) + 12);
+      c.lineTo(x, h * 0.82 - peak);
+      x += 14 + ((x * 7) % 18);
+    }
+    c.lineTo(w, h); c.lineTo(0, h); c.closePath(); c.fill();
+
+    // Foreground tree silhouettes — bare branches reaching up (classic murmuration scene)
+    c.strokeStyle = '#070310';
+    c.fillStyle = '#070310';
+    function drawTree(c, x, baseY, height) {
+      // trunk
+      c.beginPath();
+      c.moveTo(x - 4, baseY);
+      c.bezierCurveTo(x - 2, baseY - height * 0.4, x - 1, baseY - height * 0.7, x, baseY - height);
+      c.lineTo(x + 1, baseY - height);
+      c.bezierCurveTo(x + 2, baseY - height * 0.7, x + 3, baseY - height * 0.4, x + 4, baseY);
+      c.closePath(); c.fill();
+      // branches
+      function branch(x2, y2, ang, len, depth) {
+        if (depth <= 0 || len < 4) return;
+        const ex = x2 + Math.cos(ang) * len;
+        const ey = y2 + Math.sin(ang) * len;
+        c.lineWidth = Math.max(0.6, depth * 0.6);
+        c.beginPath();
+        c.moveTo(x2, y2); c.lineTo(ex, ey);
+        c.stroke();
+        branch(ex, ey, ang - 0.35, len * 0.6, depth - 1);
+        branch(ex, ey, ang + 0.35, len * 0.6, depth - 1);
+      }
+      branch(x, baseY - height * 0.95, -Math.PI / 2 + 0.15, height * 0.40, 4);
+      branch(x, baseY - height * 0.95, -Math.PI / 2 - 0.30, height * 0.36, 4);
+    }
+    drawTree(c, w * 0.16, h * 0.95, h * 0.42);
+    drawTree(c, w * 0.86, h * 0.95, h * 0.46);
+  }
+
+  function paintForestNight(c, w, h) {
+    // Pitch dark forest at night — deep teal-green to black
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0,    '#03070a');
+    g.addColorStop(0.45, '#04141a');
+    g.addColorStop(0.78, '#0a1f1c');
+    g.addColorStop(1,    '#02060a');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+
+    // Moon glow
+    const mx = w * 0.78, my = h * 0.18;
+    const moon = c.createRadialGradient(mx, my, 0, mx, my, w * 0.4);
+    moon.addColorStop(0,   'rgba(190, 210, 220, 0.50)');
+    moon.addColorStop(0.2, 'rgba(150, 180, 200, 0.20)');
+    moon.addColorStop(1,   'rgba(150, 180, 200, 0)');
+    c.fillStyle = moon; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#dfe4ea';
+    c.beginPath(); c.arc(mx, my, w * 0.045, 0, Math.PI * 2); c.fill();
+
+    // Pine silhouettes (closer)
+    c.fillStyle = '#01060a';
+    for (let i = 0; i < 16; i++) {
+      const tx = (i * w / 16) + ((i * 17) % 30) - 8;
+      const ty = h * 0.78;
+      const th = 90 + ((i * 31) % 70);
+      const tw = th * 0.6;
+      c.beginPath();
+      c.moveTo(tx, ty);
+      c.lineTo(tx - tw / 2, ty + th * 0.32);
+      c.lineTo(tx - tw * 0.25, ty + th * 0.32);
+      c.lineTo(tx - tw * 0.5, ty + th * 0.62);
+      c.lineTo(tx - tw * 0.20, ty + th * 0.62);
+      c.lineTo(tx - tw * 0.45, ty + th);
+      c.lineTo(tx + tw * 0.45, ty + th);
+      c.lineTo(tx + tw * 0.20, ty + th * 0.62);
+      c.lineTo(tx + tw * 0.5, ty + th * 0.62);
+      c.lineTo(tx + tw * 0.25, ty + th * 0.32);
+      c.lineTo(tx + tw / 2, ty + th * 0.32);
+      c.closePath(); c.fill();
+    }
+
+    // Grass at the very bottom
+    c.fillStyle = '#020a08';
+    c.beginPath();
+    c.moveTo(0, h * 0.93);
+    c.bezierCurveTo(w * 0.3, h * 0.90, w * 0.7, h * 0.94, w, h * 0.91);
+    c.lineTo(w, h); c.lineTo(0, h); c.closePath(); c.fill();
+
+    // Faint scattered stars
+    c.fillStyle = 'rgba(255, 255, 240, 0.7)';
+    for (let i = 0; i < 50; i++) {
+      const x = (i * 173) % w;
+      const y = (i * 91) % (h * 0.5);
+      const sz = ((i * 19) % 3) === 0 ? 1.6 : 0.9;
+      c.globalAlpha = 0.4 + ((i * 7) % 40) / 80;
+      c.fillRect(x, y, sz, sz);
+    }
+    c.globalAlpha = 1;
+  }
+
+  function paintSpringSky(c, w, h) {
+    // Bright spring sky — sky blue → soft cloud bottom → green meadow
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0,    '#5da8d8');
+    g.addColorStop(0.35, '#9fcde6');
+    g.addColorStop(0.62, '#e5f0f5');
+    g.addColorStop(0.74, '#c9e0c4');
+    g.addColorStop(1,    '#5d9f55');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+
+    // Sun
+    const sx = w * 0.78, sy = h * 0.22;
+    const sun = c.createRadialGradient(sx, sy, 0, sx, sy, w * 0.5);
+    sun.addColorStop(0,   'rgba(255, 250, 220, 0.85)');
+    sun.addColorStop(0.3, 'rgba(255, 240, 190, 0.30)');
+    sun.addColorStop(1,   'rgba(255, 240, 190, 0)');
+    c.fillStyle = sun; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#fffce8';
+    c.beginPath(); c.arc(sx, sy, w * 0.060, 0, Math.PI * 2); c.fill();
+
+    // Distant cloud strips
+    c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    for (let i = 0; i < 5; i++) {
+      const cx = (i * w / 5) + ((i * 31) % 40);
+      const cy = h * 0.30 + ((i * 17) % 30);
+      const cw = 60 + ((i * 41) % 80);
+      c.beginPath();
+      c.ellipse(cx, cy, cw, 12, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    // Meadow / grass
+    c.fillStyle = '#3f7e3a';
+    c.beginPath();
+    c.moveTo(0, h * 0.78);
+    c.bezierCurveTo(w * 0.3, h * 0.76, w * 0.65, h * 0.80, w, h * 0.76);
+    c.lineTo(w, h); c.lineTo(0, h); c.closePath(); c.fill();
+
+    // Dandelion silhouettes at base — a few mature ones letting seeds go
+    c.strokeStyle = '#1e3a1c';
+    c.lineWidth = 1.2;
+    function drawDandelion(cx0, cy0, scale) {
+      // stem
+      c.beginPath();
+      c.moveTo(cx0, cy0);
+      c.quadraticCurveTo(cx0 + 2 * scale, cy0 - 14 * scale, cx0 + 1 * scale, cy0 - 32 * scale);
+      c.stroke();
+      // puff head
+      const hx = cx0 + 1 * scale, hy = cy0 - 32 * scale, r = 9 * scale;
+      // glow
+      const halo = c.createRadialGradient(hx, hy, 0, hx, hy, r * 2.5);
+      halo.addColorStop(0,   'rgba(255, 255, 255, 0.85)');
+      halo.addColorStop(0.6, 'rgba(255, 255, 255, 0.35)');
+      halo.addColorStop(1,   'rgba(255, 255, 255, 0)');
+      c.fillStyle = halo;
+      c.fillRect(hx - r * 2.5, hy - r * 2.5, r * 5, r * 5);
+      // filaments
+      c.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      c.lineWidth = 0.6 * scale;
+      for (let k = 0; k < 14; k++) {
+        const ang = (k / 14) * Math.PI * 2;
+        c.beginPath();
+        c.moveTo(hx, hy);
+        c.lineTo(hx + Math.cos(ang) * r * 1.5, hy + Math.sin(ang) * r * 1.5);
+        c.stroke();
+      }
+      // core
+      c.fillStyle = 'rgba(255, 255, 240, 0.95)';
+      c.beginPath(); c.arc(hx, hy, r * 0.4, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#1e3a1c';
+      c.lineWidth = 1.2;
+    }
+    drawDandelion(w * 0.12, h * 0.90, 1.4);
+    drawDandelion(w * 0.78, h * 0.88, 1.1);
+    drawDandelion(w * 0.38, h * 0.95, 0.9);
+  }
+
+  /* ============ BOIDS ============ */
+  const boids = [];
+  const TARGET = { active: false, x: 0, y: 0, demo: false };
+
+  function initBoids() {
+    boids.length = 0;
+    const count = theme.boidCount;
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 0.8 + Math.random() * 0.8;
+      boids.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp,
+        trail: [],
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function updateBoids(dt) {
+    const SEP_R   = 22 * SCALE;
+    const NBR_R   = 56 * SCALE;
+    const TGT_R   = 220 * SCALE;
+    const MAX_S   = theme.maxSpeed * SCALE;
+    const MAX_F   = 0.10 * SCALE;
+    const sepR2 = SEP_R * SEP_R;
+    const nbrR2 = NBR_R * NBR_R;
+    const tgtR2 = TGT_R * TGT_R;
+    const usesTrail = theme.trailLen > 0;
+    const trailLen  = theme.trailLen;
+
+    for (let i = 0; i < boids.length; i++) {
+      const b = boids[i];
+      let sepX = 0, sepY = 0, sepN = 0;
+      let alX = 0, alY = 0, alN = 0;
+      let coX = 0, coY = 0;
+
+      for (let j = 0; j < boids.length; j++) {
+        if (i === j) continue;
+        const o = boids[j];
+        const ddx = b.x - o.x, ddy = b.y - o.y;
+        const d2 = ddx * ddx + ddy * ddy;
+        if (d2 < sepR2 && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          sepX += ddx / d;
+          sepY += ddy / d;
+          sepN++;
+        }
+        if (d2 < nbrR2) {
+          alX += o.vx; alY += o.vy;
+          coX += o.x;  coY += o.y;
+          alN++;
+        }
+      }
+
+      let ax = 0, ay = 0;
+
+      if (sepN > 0) {
+        sepX /= sepN; sepY /= sepN;
+        const sm = Math.hypot(sepX, sepY);
+        if (sm > 0) {
+          sepX = sepX / sm * MAX_S - b.vx;
+          sepY = sepY / sm * MAX_S - b.vy;
+          const fm = Math.hypot(sepX, sepY);
+          const cap = MAX_F * 2.2;
+          if (fm > cap) { sepX *= cap / fm; sepY *= cap / fm; }
+          ax += sepX; ay += sepY;
+        }
+      }
+
+      if (alN > 0) {
+        alX /= alN; alY /= alN;
+        const am = Math.hypot(alX, alY);
+        if (am > 0) {
+          alX = alX / am * MAX_S - b.vx;
+          alY = alY / am * MAX_S - b.vy;
+          const fm = Math.hypot(alX, alY);
+          if (fm > MAX_F) { alX *= MAX_F / fm; alY *= MAX_F / fm; }
+          ax += alX * 1.1; ay += alY * 1.1;
+        }
+        coX = coX / alN - b.x;
+        coY = coY / alN - b.y;
+        const cm = Math.hypot(coX, coY);
+        if (cm > 0) {
+          coX = coX / cm * MAX_S - b.vx;
+          coY = coY / cm * MAX_S - b.vy;
+          const fm = Math.hypot(coX, coY);
+          if (fm > MAX_F) { coX *= MAX_F / fm; coY *= MAX_F / fm; }
+          ax += coX * 0.7; ay += coY * 0.7;
+        }
+      }
+
+      if (TARGET.active) {
+        const tdx = TARGET.x - b.x, tdy = TARGET.y - b.y;
+        const td2 = tdx * tdx + tdy * tdy;
+        if (td2 < tgtR2 && td2 > 0.0001) {
+          const td = Math.sqrt(td2);
+          // proximity falloff: stronger pull at mid-range, light at very close
+          const prox = 1 - td / TGT_R;
+          const pull = MAX_F * 4.5 * (0.4 + prox);
+          ax += (tdx / td) * pull;
+          ay += (tdy / td) * pull;
+        }
+      } else {
+        // gentle wander when finger lifted
+        b.phase += 0.04;
+        ax += Math.cos(b.phase) * MAX_F * 0.08;
+        ay += Math.sin(b.phase * 1.3) * MAX_F * 0.08;
+      }
+
+      b.vx += ax;
+      b.vy += ay;
+      const sp = Math.hypot(b.vx, b.vy);
+      const min = MAX_S * 0.25;
+      if (sp > MAX_S) { b.vx *= MAX_S / sp; b.vy *= MAX_S / sp; }
+      else if (sp < min && sp > 0) { b.vx *= min / sp; b.vy *= min / sp; }
+
+      b.x += b.vx;
+      b.y += b.vy;
+
+      if (b.x < -10) b.x = W + 10;
+      if (b.x > W + 10) b.x = -10;
+      if (b.y < -10) b.y = H + 10;
+      if (b.y > H + 10) b.y = -10;
+
+      if (usesTrail) {
+        b.trail.unshift(b.x);
+        b.trail.unshift(b.y);
+        if (b.trail.length > trailLen * 2) b.trail.length = trailLen * 2;
+      }
+    }
+
+    // score: count boids within finger pull radius (only while a REAL user is pulling)
+    if (TARGET.active && !TARGET.demo) {
+      let near = 0;
+      const closeR2 = (140 * SCALE) ** 2;
+      for (const b of boids) {
+        const dx = b.x - TARGET.x, dy = b.y - TARGET.y;
+        if (dx * dx + dy * dy < closeR2) near++;
+      }
+      lifetime += near * 0.020;
+      pendingScore += near * 0.020;
+    }
+  }
+
+  function drawBoids(c) {
+    c.clearRect(0, 0, W, H);
+    const style = theme.boidStyle;
+    const sz = theme.boidSize * SCALE;
+
+    if (style === 'triangle') {
+      // Starlings — small dark arrowheads facing velocity
+      c.fillStyle = theme.boidColor;
+      for (const b of boids) {
+        const ang = Math.atan2(b.vy, b.vx);
+        c.save();
+        c.translate(b.x, b.y);
+        c.rotate(ang);
+        c.beginPath();
+        c.moveTo(sz * 1.4, 0);
+        c.lineTo(-sz * 0.7,  sz * 0.7);
+        c.lineTo(-sz * 0.35, 0);
+        c.lineTo(-sz * 0.7, -sz * 0.7);
+        c.closePath();
+        c.fill();
+        c.restore();
+      }
+    } else if (style === 'firefly') {
+      // Fireflies — soft glowing dot + long fading trail
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      for (const b of boids) {
+        const trail = b.trail;
+        if (trail.length > 4) {
+          for (let k = 2; k < trail.length; k += 2) {
+            const a = 0.45 * (1 - k / trail.length);
+            c.fillStyle = `rgba(255, 235, 100, ${a})`;
+            c.beginPath();
+            c.arc(trail[k+1], trail[k], sz * 0.7 * (1 - k / trail.length / 2), 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+        // halo
+        const grad = c.createRadialGradient(b.x, b.y, 0, b.x, b.y, sz * 4);
+        grad.addColorStop(0,   theme.boidGlow);
+        grad.addColorStop(0.4, 'rgba(255, 230, 120, 0.25)');
+        grad.addColorStop(1,   'rgba(255, 230, 120, 0)');
+        c.fillStyle = grad;
+        c.fillRect(b.x - sz * 4, b.y - sz * 4, sz * 8, sz * 8);
+        // core
+        c.fillStyle = theme.boidColor;
+        c.beginPath(); c.arc(b.x, b.y, sz * 0.85, 0, Math.PI * 2); c.fill();
+      }
+      c.restore();
+    } else if (style === 'puff') {
+      // Dandelion seeds — white puff + thin filaments + short trail
+      for (const b of boids) {
+        const trail = b.trail;
+        if (trail.length > 4) {
+          c.save();
+          c.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+          c.lineWidth = 0.9;
+          c.beginPath();
+          c.moveTo(trail[1], trail[0]);
+          for (let k = 2; k < trail.length; k += 2) {
+            c.lineTo(trail[k+1], trail[k]);
+          }
+          c.stroke();
+          c.restore();
+        }
+        // halo
+        const grad = c.createRadialGradient(b.x, b.y, 0, b.x, b.y, sz * 2.4);
+        grad.addColorStop(0,   theme.boidGlow);
+        grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.20)');
+        grad.addColorStop(1,   'rgba(255, 255, 255, 0)');
+        c.fillStyle = grad;
+        c.fillRect(b.x - sz * 2.4, b.y - sz * 2.4, sz * 4.8, sz * 4.8);
+        // filaments
+        c.save();
+        c.translate(b.x, b.y);
+        c.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        c.lineWidth = 0.7;
+        for (let k = 0; k < 8; k++) {
+          const ang = (k / 8) * Math.PI * 2;
+          c.beginPath();
+          c.moveTo(0, 0);
+          c.lineTo(Math.cos(ang) * sz * 1.4, Math.sin(ang) * sz * 1.4);
+          c.stroke();
+        }
+        c.restore();
+        // core
+        c.fillStyle = '#ffffff';
+        c.beginPath(); c.arc(b.x, b.y, sz * 0.45, 0, Math.PI * 2); c.fill();
+      }
+    }
+  }
+
+  /* ============ AUDIO ============ */
+  let actx = null, master = null, ambientStarted = false;
+  let noiseBuf = null;
+  let lastWing = 0;
+  let voicesAlive = 0;
+
+  function initAudio() {
+    if (actx) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      actx = new Ctx();
+      master = actx.createGain();
+      master.gain.value = 0.5;
+      master.connect(actx.destination);
+
+      const sec = 2;
+      const len = actx.sampleRate * sec;
+      noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+      const ch = noiseBuf.getChannelData(0);
+      let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        ch[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+        b6 = white * 0.115926;
+      }
+      setTimeout(() => { if (!ambientStarted && actx) { startAmbient(); ambientStarted = true; } }, 600);
+    } catch (_) { actx = null; }
+  }
+
+  let ambientNodes = null;
+  function startAmbient() { rebuildAmbient(); scheduleAmbientBreath(); }
+  function rebuildAmbient() {
+    if (!actx) return;
+    if (ambientNodes) { try { ambientNodes.disconnect(); } catch (_) {} ambientNodes = null; }
+    const g = actx.createGain(); g.gain.value = 0; g.connect(master);
+
+    if (theme.ambient === 'wind') {
+      const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+      const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 60;
+      src.connect(hp); hp.connect(lp); lp.connect(g);
+      src.start();
+      ambientNodes = { g, src, _peak: 0.22 };
+    } else if (theme.ambient === 'crickets') {
+      // hi-freq chirping band + low rumble
+      const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.value = 4500; bp.Q.value = 12;
+      src.connect(bp); bp.connect(g);
+      src.start();
+      ambientNodes = { g, src, _peak: 0.10 };
+    } else if (theme.ambient === 'breeze') {
+      // softer, brighter wind
+      const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500;
+      const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 180;
+      src.connect(hp); hp.connect(lp); lp.connect(g);
+      src.start();
+      ambientNodes = { g, src, _peak: 0.18 };
+    }
+  }
+
+  function scheduleAmbientBreath() {
+    if (!actx || !ambientNodes) return;
+    const t0 = actx.currentTime;
+    const rise = 5 + Math.random() * 3;
+    const hold = 8 + Math.random() * 8;
+    const fall = 6 + Math.random() * 4;
+    const silent = 7 + Math.random() * 9;
+    const peak = ambientNodes._peak;
+    const g = ambientNodes.g.gain;
+    try {
+      g.cancelScheduledValues(t0);
+      g.setValueAtTime(g.value, t0);
+      g.linearRampToValueAtTime(peak, t0 + rise);
+      g.linearRampToValueAtTime(peak, t0 + rise + hold);
+      g.linearRampToValueAtTime(0,    t0 + rise + hold + fall);
+    } catch (_) {}
+    setTimeout(scheduleAmbientBreath, (rise + hold + fall + silent) * 1000);
+  }
+
+  function playWingFlap() {
+    if (!actx || actx.state !== 'running') return;
+    const now = performance.now();
+    if (now - lastWing < 80) return;
+    if (voicesAlive >= 5) return;
+    lastWing = now;
+    voicesAlive++;
+    try {
+      const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = false;
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.value = theme.ambient === 'crickets' ? 800 + Math.random() * 400
+                         : theme.ambient === 'breeze'   ? 1600 + Math.random() * 600
+                         : 1100 + Math.random() * 500;
+      bp.Q.value = 4;
+      const g = actx.createGain(); g.gain.value = 0;
+      const t = actx.currentTime;
+      const amp = 0.05 + Math.random() * 0.08;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      src.connect(bp); bp.connect(g); g.connect(master);
+      src.start(t, Math.random() * 1.6);
+      src.stop(t + 0.16);
+      src.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+    } catch (_) { voicesAlive = Math.max(0, voicesAlive - 1); }
+  }
+
+  /* ============ POINTER ============ */
+  function getXY(e) {
+    const r = flock.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function onDown(e) {
+    e.preventDefault();
+    const { x, y } = getXY(e);
+    TARGET.active = true; TARGET.x = x; TARGET.y = y; TARGET.demo = false;
+    if (!firstTouch) {
+      firstTouch = true;
+      countEl.style.display = '';
+      countEl.textContent = formatScore(lifetime);
+      if (wipeHintEl) wipeHintEl.classList.add('gone');
+    }
+    initAudio();
+    if (actx && actx.state !== 'running') { try { actx.resume(); } catch (_) {} }
+    playWingFlap();
+    bumpCount();
+  }
+  function onMove(e) {
+    if (!TARGET.active) return;
+    e.preventDefault();
+    const { x, y } = getXY(e);
+    TARGET.x = x; TARGET.y = y;
+    // wing flap occasionally during drag (sound of birds reacting)
+    if (Math.random() < 0.06) playWingFlap();
+  }
+  function onUp() {
+    TARGET.active = false;
+    flushScore();
+  }
+
+  function bumpCount() {
+    if (firstTouch) {
+      countEl.textContent = formatScore(lifetime);
+      countEl.classList.add('pop');
+      setTimeout(() => countEl.classList.remove('pop'), 160);
+    }
+  }
+  function formatScore(n) { return Math.floor(n).toLocaleString('en-US'); }
+
+  /* ---------- persistence ---------- */
+  const STORAGE_KEY = 'murmuration_lifetime_v1';
+  function loadLifetime() {
+    try {
+      const v = parseFloat(localStorage.getItem(STORAGE_KEY) || '0');
+      if (Number.isFinite(v) && v > 0) lifetime = v;
+    } catch (_) {}
+  }
+  function saveLifetime() {
+    try { localStorage.setItem(STORAGE_KEY, String(Math.floor(lifetime))); } catch (_) {}
+  }
+  let saveAcc = 0;
+  function maybeSave(dtMs) {
+    saveAcc += dtMs;
+    if (saveAcc > 1500 && pendingScore > 0) {
+      saveAcc = 0;
+      saveLifetime();
+      if (pendingScore >= 5) {
+        pendingScore = 0;
+        if (window.GG_LB && window.GG_LB.submitScore) {
+          window.GG_LB.submitScore(Math.floor(lifetime));
+        }
+      }
+    }
+  }
+  function flushScore() {
+    if (pendingScore <= 0) return;
+    saveLifetime();
+    if (window.GG_LB && window.GG_LB.submitScore) {
+      window.GG_LB.submitScore(Math.floor(lifetime));
+    }
+    pendingScore = 0;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushScore(); });
+  window.addEventListener('pagehide', flushScore);
+
+  /* ============ MAIN LOOP ============ */
+  let lastT = 0, raf = 0;
+  const FRAME_MS = 1000 / 60;
+  let cachedBg = null;
+
+  function frame(t) {
+    if (!lastT) lastT = t;
+    const dt = Math.min(64, t - lastT);
+    if (dt < FRAME_MS - 1) { raf = requestAnimationFrame(frame); return; }
+    lastT = t;
+
+    if (cachedBg) {
+      bgCtx.clearRect(0, 0, W, H);
+      bgCtx.drawImage(cachedBg, 0, 0, W, H);
+    }
+    updateBoids(dt);
+    drawBoids(flockCtx);
+
+    if (firstTouch) bumpCount();
+    maybeSave(dt);
+
+    raf = requestAnimationFrame(frame);
+  }
+
+  /* ============ THEME SWITCH ============ */
+  function applyTheme(name) {
+    if (!THEMES[name]) return;
+    themeName = name;
+    theme = THEMES[name];
+    document.body.style.background = theme.bodyBg;
+    cachedBg = document.createElement('canvas');
+    cachedBg.width = W; cachedBg.height = H;
+    theme.paintBg(cachedBg.getContext('2d'), W, H);
+    initBoids();
+    themeStrip.querySelectorAll('.theme-chip').forEach(d => {
+      d.classList.toggle('active', d.dataset.t === name);
+    });
+    if (ambientStarted) { rebuildAmbient(); scheduleAmbientBreath(); }
+    try { localStorage.setItem('murmuration_theme', name); } catch (_) {}
+  }
+
+  themeStrip.addEventListener('pointerdown', e => {
+    const chip = e.target.closest('.theme-chip');
+    if (!chip) return;
+    const t = chip.dataset.t;
+    if (t && t !== themeName) {
+      initAudio();
+      if (actx && actx.state !== 'running') { try { actx.resume(); } catch (_) {} }
+      applyTheme(t);
+      chip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  });
+
+  /* ============ RESIZE ============ */
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    SCALE = Math.min(w, h) / 400;     // 400 = baseline ref
+    W = w; H = h;
+    [bg, flock].forEach(cv => {
+      cv.style.width = w + 'px';
+      cv.style.height = h + 'px';
+      cv.width = Math.floor(w * DPR);
+      cv.height = Math.floor(h * DPR);
+      cv.getContext('2d').setTransform(DPR, 0, 0, DPR, 0, 0);
+    });
+    cachedBg = document.createElement('canvas');
+    cachedBg.width = W; cachedBg.height = H;
+    theme.paintBg(cachedBg.getContext('2d'), W, H);
+    initBoids();
+  }
+  window.addEventListener('resize', resize);
+
+  /* ============ INTRO DEMO ============ */
+  function runIntroDemo() {
+    if (firstTouch) return;
+    const ghost = document.getElementById('ghostFinger');
+    const label = document.getElementById('wipeHintLabel');
+    if (!ghost) return;
+    const TX_OFF = 28, TY_OFF = 17;
+    const cx = W * 0.5, cy = H * 0.5;
+    const radius = Math.min(W, H) * 0.20;
+
+    function placeGhost(x, y, rot = 0) {
+      ghost.style.transform = `translate(${x - TX_OFF}px, ${y - TY_OFF}px) rotate(${rot}deg)`;
+    }
+    placeGhost(cx + radius, cy, 0);
+    requestAnimationFrame(() => ghost.classList.add('show'));
+
+    function animateCircle(duration, doPull, onDone) {
+      if (firstTouch) return;
+      const T0 = performance.now();
+      const tick = (now) => {
+        if (firstTouch) return;
+        const f = Math.min(1, (now - T0) / duration);
+        // ease-in-out cubic
+        const ease = f < 0.5 ? 4*f*f*f : 1 - Math.pow(-2*f + 2, 3) / 2;
+        const ang = ease * Math.PI * 2;
+        const x = cx + Math.cos(ang) * radius;
+        const y = cy + Math.sin(ang) * radius;
+        const tilt = Math.sin(ang) * 12;
+        placeGhost(x, y, tilt);
+        if (doPull) {
+          TARGET.active = true;
+          TARGET.demo = true;
+          TARGET.x = x;
+          TARGET.y = y;
+        }
+        if (f < 1) requestAnimationFrame(tick);
+        else { if (doPull) { TARGET.active = false; TARGET.demo = false; } if (onDone) onDone(); }
+      };
+      requestAnimationFrame(tick);
+    }
+
+    function loop() {
+      if (firstTouch) return;
+      animateCircle(2400, true, () => {
+        label.classList.add('show');
+        setTimeout(() => {
+          if (firstTouch) return;
+          ghost.classList.remove('show');
+          setTimeout(() => {
+            if (firstTouch) return;
+            placeGhost(cx + radius, cy, 0);
+            requestAnimationFrame(() => ghost.classList.add('show'));
+            setTimeout(loop, 300);
+          }, 400);
+        }, 1400);
+      });
+    }
+    setTimeout(loop, 500);
+  }
+
+  /* ============ INIT ============ */
+  loadLifetime();
+  resize();
+  const urlTheme = new URLSearchParams(window.location.search).get('theme');
+  let saved = null;
+  try { saved = localStorage.getItem('murmuration_theme'); } catch (_) {}
+  const startTheme = (urlTheme && THEMES[urlTheme]) ? urlTheme
+                    : (saved && THEMES[saved]) ? saved
+                    : 'starlings';
+  applyTheme(startTheme);
+
+  if (lifetime > 0) {
+    countEl.style.display = '';
+    countEl.textContent = formatScore(lifetime);
+  }
+  if (isPoster) {
+    document.querySelector('.hud-bottom').style.display = 'none';
+    document.querySelector('.theme-strip').style.display = 'none';
+    document.querySelector('.watermark').style.display = 'none';
+    if (wipeHintEl) wipeHintEl.style.display = 'none';
+    document.getElementById('posterOverlay').style.display = 'block';
+    // simulate a steady gather at center so boids visibly cluster for the poster
+    TARGET.active = true; TARGET.demo = true;
+    TARGET.x = W * 0.5; TARGET.y = H * 0.62;
+  } else {
+    runIntroDemo();
+  }
+
+  flock.addEventListener('pointerdown', onDown);
+  flock.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+
+  raf = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
