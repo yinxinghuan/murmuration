@@ -904,6 +904,8 @@
       }
       lifetime += near * 0.020;
       pendingScore += near * 0.020;
+      // milestone gather chord — when the swarm really compresses around you
+      if (near >= 25) playGatherChord(near);
     }
   }
 
@@ -1087,31 +1089,109 @@
     setTimeout(scheduleAmbientBreath, (rise + hold + fall + silent) * 1000);
   }
 
+  // Per-theme short SFX on touch / drag — bird flap, firefly chime, puff breath
   function playWingFlap() {
     if (!actx || actx.state !== 'running') return;
     const now = performance.now();
-    if (now - lastWing < 80) return;
-    if (voicesAlive >= 5) return;
+    if (now - lastWing < 70) return;
+    if (voicesAlive >= 6) return;
     lastWing = now;
     voicesAlive++;
     try {
-      const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = false;
-      const bp = actx.createBiquadFilter(); bp.type = 'bandpass';
-      bp.frequency.value = theme.ambient === 'crickets' ? 800 + Math.random() * 400
-                         : theme.ambient === 'breeze'   ? 1600 + Math.random() * 600
-                         : 1100 + Math.random() * 500;
-      bp.Q.value = 4;
-      const g = actx.createGain(); g.gain.value = 0;
       const t = actx.currentTime;
-      const amp = 0.05 + Math.random() * 0.08;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(amp, t + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-      src.connect(bp); bp.connect(g); g.connect(master);
-      src.start(t, Math.random() * 1.6);
-      src.stop(t + 0.16);
-      src.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+      if (themeName === 'fireflies') {
+        // tiny crystalline chime — random high overtone, very short
+        const o = actx.createOscillator(); o.type = 'triangle';
+        const base = 1400 + Math.random() * 1800;
+        o.frequency.value = base;
+        const g = actx.createGain(); g.gain.value = 0;
+        const amp = 0.05 + Math.random() * 0.06;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(amp, t + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+        o.connect(g); g.connect(master);
+        o.start(t); o.stop(t + 0.34);
+        o.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+      } else if (themeName === 'dandelion') {
+        // soft puff — short filtered noise with quick attack + breathy tail
+        const src = actx.createBufferSource(); src.buffer = noiseBuf;
+        const lp = actx.createBiquadFilter(); lp.type = 'lowpass';
+        lp.frequency.value = 2400 + Math.random() * 1200;
+        lp.Q.value = 0.7;
+        const hp = actx.createBiquadFilter(); hp.type = 'highpass';
+        hp.frequency.value = 600;
+        const g = actx.createGain(); g.gain.value = 0;
+        const amp = 0.06 + Math.random() * 0.06;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(amp, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+        src.start(t, Math.random() * 1.5);
+        src.stop(t + 0.26);
+        src.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+      } else {
+        // starlings — short wing flap: a low THUMP layered with high TK
+        const src = actx.createBufferSource(); src.buffer = noiseBuf;
+        const bp = actx.createBiquadFilter(); bp.type = 'bandpass';
+        bp.frequency.value = 280 + Math.random() * 220;
+        bp.Q.value = 3.5;
+        const g1 = actx.createGain(); g1.gain.value = 0;
+        const amp = 0.06 + Math.random() * 0.07;
+        g1.gain.setValueAtTime(0, t);
+        g1.gain.linearRampToValueAtTime(amp, t + 0.006);
+        g1.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+        src.connect(bp); bp.connect(g1); g1.connect(master);
+        src.start(t, Math.random() * 1.5);
+        src.stop(t + 0.16);
+        // high tick on top — sharp feather impact
+        const src2 = actx.createBufferSource(); src2.buffer = noiseBuf;
+        const bp2 = actx.createBiquadFilter(); bp2.type = 'bandpass';
+        bp2.frequency.value = 4500 + Math.random() * 1500;
+        bp2.Q.value = 8;
+        const g2 = actx.createGain(); g2.gain.value = 0;
+        g2.gain.setValueAtTime(0, t + 0.008);
+        g2.gain.linearRampToValueAtTime(0.05, t + 0.014);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+        src2.connect(bp2); bp2.connect(g2); g2.connect(master);
+        src2.start(t + 0.008, Math.random() * 1.5);
+        src2.stop(t + 0.08);
+        src.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+      }
     } catch (_) { voicesAlive = Math.max(0, voicesAlive - 1); }
+  }
+
+  // Sustained gather chime — fires when many boids cluster near the finger.
+  // Throttled to ≥1.5s between events so it never overlaps with itself.
+  let lastChord = 0;
+  function playGatherChord(intensity) {
+    if (!actx || actx.state !== 'running') return;
+    const now = performance.now();
+    if (now - lastChord < 1500) return;
+    lastChord = now;
+    try {
+      const t = actx.currentTime;
+      // Per theme: different chord roots
+      const roots = themeName === 'fireflies' ? [330, 415, 494, 622]   // E major-ish triad sparkle
+                  : themeName === 'dandelion' ? [262, 330, 392, 523]   // C major (warm)
+                  : [196, 247, 294, 392];                                 // G minor (dusk)
+      const amp = Math.min(0.10, 0.05 + intensity * 0.0008);
+      const dur = 1.8 + intensity * 0.01;
+      const tone = themeName === 'fireflies' ? 'triangle'
+                 : themeName === 'dandelion' ? 'sine'
+                 : 'sine';
+      roots.forEach((f, i) => {
+        const o = actx.createOscillator(); o.type = tone;
+        o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.008);
+        const g = actx.createGain(); g.gain.value = 0;
+        const tStart = t + i * 0.06;
+        g.gain.setValueAtTime(0, tStart);
+        g.gain.linearRampToValueAtTime(amp * (0.9 - i * 0.15), tStart + 0.10);
+        g.gain.linearRampToValueAtTime(amp * 0.45, tStart + dur * 0.4);
+        g.gain.exponentialRampToValueAtTime(0.0001, tStart + dur);
+        o.connect(g); g.connect(master);
+        o.start(tStart); o.stop(tStart + dur + 0.05);
+      });
+    } catch (_) {}
   }
 
   /* ============ POINTER ============ */
@@ -1140,7 +1220,7 @@
     const { x, y } = getXY(e);
     TARGET.x = x; TARGET.y = y;
     // wing flap occasionally during drag (sound of birds reacting)
-    if (Math.random() < 0.06) playWingFlap();
+    if (Math.random() < 0.11) playWingFlap();
   }
   function onUp() {
     TARGET.active = false;
