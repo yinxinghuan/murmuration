@@ -1089,6 +1089,29 @@
     setTimeout(scheduleAmbientBreath, (rise + hold + fall + silent) * 1000);
   }
 
+  // Pentatonic scales per theme — pick any subset and you'll get something
+  // harmonious. Lets every touch/chord be different but never dissonant.
+  const SCALES = {
+    // G minor pentatonic, dusk register
+    starlings: [196, 233.08, 261.63, 293.66, 349.23, 392, 466.16, 523.25, 587.33, 698.46],
+    // E major pentatonic, sparkly high
+    fireflies: [659.26, 739.99, 830.61, 987.77, 1108.73, 1318.51, 1479.98, 1661.22, 1975.53, 2217.46],
+    // C major pentatonic, warm mid
+    dandelion: [261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.26, 783.99, 880],
+  };
+  function pickFromScale(n) {
+    const scale = SCALES[themeName] || SCALES.starlings;
+    const out = [];
+    const used = new Set();
+    while (out.length < n && used.size < scale.length) {
+      const idx = Math.floor(Math.random() * scale.length);
+      if (used.has(idx)) continue;
+      used.add(idx);
+      out.push(scale[idx]);
+    }
+    return out.sort((a, b) => a - b);
+  }
+
   // Per-theme short SFX on touch / drag — bird flap, firefly chime, puff breath
   function playWingFlap() {
     if (!actx || actx.state !== 'running') return;
@@ -1100,37 +1123,47 @@
     try {
       const t = actx.currentTime;
       if (themeName === 'fireflies') {
-        // tiny crystalline chime — random high overtone, very short
+        // tiny crystalline chime — pentatonic pitch so each tap is musical
         const o = actx.createOscillator(); o.type = 'triangle';
-        const base = 1400 + Math.random() * 1800;
-        o.frequency.value = base;
+        const [pitch] = pickFromScale(1);
+        o.frequency.value = pitch * (1 + (Math.random() - 0.5) * 0.005);
         const g = actx.createGain(); g.gain.value = 0;
         const amp = 0.05 + Math.random() * 0.06;
         g.gain.setValueAtTime(0, t);
         g.gain.linearRampToValueAtTime(amp, t + 0.005);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
         o.connect(g); g.connect(master);
-        o.start(t); o.stop(t + 0.34);
+        o.start(t); o.stop(t + 0.36);
         o.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
       } else if (themeName === 'dandelion') {
-        // soft puff — short filtered noise with quick attack + breathy tail
+        // soft puff — filtered noise + a faint whistled pentatonic overtone
         const src = actx.createBufferSource(); src.buffer = noiseBuf;
         const lp = actx.createBiquadFilter(); lp.type = 'lowpass';
         lp.frequency.value = 2400 + Math.random() * 1200;
         lp.Q.value = 0.7;
         const hp = actx.createBiquadFilter(); hp.type = 'highpass';
         hp.frequency.value = 600;
-        const g = actx.createGain(); g.gain.value = 0;
-        const amp = 0.06 + Math.random() * 0.06;
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(amp, t + 0.012);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-        src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+        const gN = actx.createGain(); gN.gain.value = 0;
+        const ampN = 0.05 + Math.random() * 0.05;
+        gN.gain.setValueAtTime(0, t);
+        gN.gain.linearRampToValueAtTime(ampN, t + 0.012);
+        gN.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+        src.connect(hp); hp.connect(lp); lp.connect(gN); gN.connect(master);
         src.start(t, Math.random() * 1.5);
-        src.stop(t + 0.26);
+        src.stop(t + 0.28);
         src.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+        // quiet whistle overtone — pentatonic
+        const [pitch] = pickFromScale(1);
+        const o = actx.createOscillator(); o.type = 'sine';
+        o.frequency.value = pitch * 2;     // octave up for "whistle" register
+        const gO = actx.createGain(); gO.gain.value = 0;
+        gO.gain.setValueAtTime(0, t);
+        gO.gain.linearRampToValueAtTime(0.035, t + 0.025);
+        gO.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+        o.connect(gO); gO.connect(master);
+        o.start(t); o.stop(t + 0.30);
       } else {
-        // starlings — short wing flap: a low THUMP layered with high TK
+        // starlings — wing flap THUMP + TK + faint pentatonic chirp call
         const src = actx.createBufferSource(); src.buffer = noiseBuf;
         const bp = actx.createBiquadFilter(); bp.type = 'bandpass';
         bp.frequency.value = 280 + Math.random() * 220;
@@ -1143,7 +1176,7 @@
         src.connect(bp); bp.connect(g1); g1.connect(master);
         src.start(t, Math.random() * 1.5);
         src.stop(t + 0.16);
-        // high tick on top — sharp feather impact
+        // sharp feather tick
         const src2 = actx.createBufferSource(); src2.buffer = noiseBuf;
         const bp2 = actx.createBiquadFilter(); bp2.type = 'bandpass';
         bp2.frequency.value = 4500 + Math.random() * 1500;
@@ -1156,12 +1189,25 @@
         src2.start(t + 0.008, Math.random() * 1.5);
         src2.stop(t + 0.08);
         src.onended = () => { voicesAlive = Math.max(0, voicesAlive - 1); };
+        // very faint bird chirp — pentatonic, drops a minor third
+        const [pitch] = pickFromScale(1);
+        const o = actx.createOscillator(); o.type = 'sine';
+        o.frequency.setValueAtTime(pitch * 2, t + 0.02);
+        o.frequency.exponentialRampToValueAtTime(pitch * 1.65, t + 0.10);
+        const gO = actx.createGain(); gO.gain.value = 0;
+        gO.gain.setValueAtTime(0, t + 0.02);
+        gO.gain.linearRampToValueAtTime(0.03, t + 0.03);
+        gO.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        o.connect(gO); gO.connect(master);
+        o.start(t + 0.02); o.stop(t + 0.14);
       }
     } catch (_) { voicesAlive = Math.max(0, voicesAlive - 1); }
   }
 
   // Sustained gather chime — fires when many boids cluster near the finger.
-  // Throttled to ≥1.5s between events so it never overlaps with itself.
+  // Each fire picks 4 unique notes from the theme's pentatonic, so every
+  // chord is harmonically related but different from the last. Throttled
+  // to ≥1.5s between events.
   let lastChord = 0;
   function playGatherChord(intensity) {
     if (!actx || actx.state !== 'running') return;
@@ -1170,22 +1216,17 @@
     lastChord = now;
     try {
       const t = actx.currentTime;
-      // Per theme: different chord roots
-      const roots = themeName === 'fireflies' ? [330, 415, 494, 622]   // E major-ish triad sparkle
-                  : themeName === 'dandelion' ? [262, 330, 392, 523]   // C major (warm)
-                  : [196, 247, 294, 392];                                 // G minor (dusk)
+      const notes = pickFromScale(4);
       const amp = Math.min(0.10, 0.05 + intensity * 0.0008);
       const dur = 1.8 + intensity * 0.01;
-      const tone = themeName === 'fireflies' ? 'triangle'
-                 : themeName === 'dandelion' ? 'sine'
-                 : 'sine';
-      roots.forEach((f, i) => {
+      const tone = themeName === 'fireflies' ? 'triangle' : 'sine';
+      notes.forEach((f, i) => {
         const o = actx.createOscillator(); o.type = tone;
-        o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.008);
+        o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.006);
         const g = actx.createGain(); g.gain.value = 0;
         const tStart = t + i * 0.06;
         g.gain.setValueAtTime(0, tStart);
-        g.gain.linearRampToValueAtTime(amp * (0.9 - i * 0.15), tStart + 0.10);
+        g.gain.linearRampToValueAtTime(amp * (0.9 - i * 0.13), tStart + 0.10);
         g.gain.linearRampToValueAtTime(amp * 0.45, tStart + dur * 0.4);
         g.gain.exponentialRampToValueAtTime(0.0001, tStart + dur);
         o.connect(g); g.connect(master);
